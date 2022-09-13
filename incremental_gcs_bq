@@ -1,0 +1,128 @@
+https://blog.searce.com/incremental-data-ingestion-pipelines-in-bigquery-dfd974480714
+The external_dataset refers to the External tables created to raw data present in Cloud Storage.
+native_dataset has the raw data which is loaded into Bigquery from the External table.
+blended_dataset has the processed data in Bigquery.
+tables were created in native_dataset and blended_dataset with p_date as partition column to their corresponding External table structure
+create table demo_dataset.metadata(
+src_dataset_name STRING,
+src_table_name STRING,
+dest_dataset_name STRING,
+dest_table_name STRING,
+scheduled_query STRING,
+last_deltamark DATE,
+last_successful_run DATETIME,
+last_delta_loaded DATETIME);
+src_dataset_name : source dataset name
+src_table : source table name
+dest_dataset_name : destination dataset name
+dest_table : destination table name
+scheduled_query: is the schedule Query name which is the automated feature for data ingestion
+last_deltamark: is the last partition date that was loaded into Bigquery
+last_successful_run: is the current timestamp when on every successful Schedule Query Run
+last_delta_loaded: is the timestamp when data is loaded from source table to target table
+
+New data ingestion works on the value “ last_deltamark “presented above.
+
+Initially, metadata tale for the first time, and it gets updated automatically after every scheduled run
+
+The next step is to create a repository for all the tables. For that, the records which have dataset name and table name details needs to be inserted manually once
+
+Manual Insertion of Records to Metadata table is a one-time activity for all tables and after every successful run of the stored procedure the metadata table will be automatically updated based on the dataset and table names
+
+INSERT INTO `demo_dataset.metadata` VALUES(‘external_dataset_name’,’external_table_name’,’native_dataset_name’,‘native_table_name’,‘sp_external_table_to_native_table’,‘1970–01–01’,null,null);
+In the above query,
+
+external_dataset_name is the source dataset name
+external_table_name is the source table name
+native_dataset_name is the destination dataset name
+native_table_name is the destination table name
+1970–01–01 is the last_deltamark, a discrete date entered for data extraction and loading it to the destination table
+last_successful_run and last_delta_loaded are kept null, which will be updated once the data is loaded
+Once the metadata table is created, Next is to execute the stored procedure developed for setting up an incremental pipeline
+
+In the stored procedures, the following are the different steps executed
+
+Step 1: To fetch the last partition date i.e. “last_deltamark” from our metadata table and store it in the “last_deltamark” variable
+
+Step 2: Next is to find the maximum of p_date from the source tables with the condition where p_date has to be greater than last_deltamark and store it in a variable “next_deltamark”
+
+Step 3: If next_deltamark is NULL, then no new data insertion, only metadata table gets updated with last_successful_run which is the current timestamp of the Stored procedure Execution time
+
+Step 4: If next_deltamark is NOT NULL, new data needs to be inserted. First new data needs to be inserted into the target table and then the last_deltamark, last_successful_run, and last_delta_loaded are updated in the metadata table.
+
+where,
+
+last_deltamark will have the next_deltamark value
+last_successful_run is the current timestamp for the stored procedure execution
+last_delta_loaded will be the current timestamp for the stored procedure execution and for loading the data to the target
+Following Stored Procedure will extract the data from source and load it to the Target table and updates the metadata table accordingly
+
+
+CREATE OR REPLACE PROCEDURE `project-id-test-gcp.stored_procedure_script.sp_native_table`
+(IN external_dataset STRING,IN external_table_name STRING,IN native_dataset STRING, IN native_table_name STRING)
+BEGIN
+DECLARE last_deltamark DATE;
+DECLARE next_deltamark DATE ;
+DECLARE last_delta_loaded DATETIME ;
+DECLARE query_exec_time DATETIME;
+/*INPUT PARAMETERS : 
+ external_dataset : External  Data Set name 
+ external_table_name : External  Table name 
+ native_dataset : Native table Dataset
+ native_table_name : Native table name
+Variable Declaration
+last_deltamark:  p_date which is captured in the metadata table which is used to find which next partition is to be loaded
+next_deltamark: maximum of the p_date present in the source table for a pipeline from GCS to Native 
+last_delta_loaded:  query Execution time when Data to be loaded is NOT NULL 
+query_exec_time: Variable which converts the current UTC TO Asia/Singapore TIMESTAMP
+ */
+SET query_exec_time=(SELECT   
+DATETIME(current_timestamp(), "Asia/Singapore"));
+EXECUTE IMMEDIATE format(
+    "select last_deltamark  from demo_dataset.metadata where src_dataset_name = '%s' and src_table = '%s' and dest_table ='%s' ",
+    external_dataset,external_table_name,native_table_name) 
+INTO last_deltamark;
+EXECUTE IMMEDIATE format ("select max(p_date) as next_deltamark from %s.%s where p_date > '%t'",external_dataset,external_table_name,last_deltamark)
+into next_deltamark ;
+/*If next_deltamark is not null , there is new partition to be loaded into target from source  */
+if (next_deltamark IS NOT NULL ) then 
+-- IF NEW DATA, THEN INSERT NEW DATA TO TARGET AND UPDATES METADATA TABLE
+--INSERT INTO NATIVE TABLE FROM EXTERNAL TABLE 
+EXECUTE IMMEDIATE format ("insert into %s.%s (select * from %s.%s where p_date >'%t' and p_date <='%t')",native_dataset,native_table_name,external_dataset,external_table_name,last_deltamark,next_deltamark) ;
+--UPDATE INTO METADATA TABLE ABOUT NATIVE TABLE INFORMATION
+EXECUTE IMMEDIATE format ("""update `demo_dataset.metadata` 
+set last_deltamark = '%t',last_successful_run = '%t' ,last_delta_loaded = '%t'
+where src_dataset_name = '%s' and src_table = '%s' and dest_table ='%s' """
+,next_deltamark,query_exec_time,query_exec_time,external_dataset,external_table_name,native_table_name ) ;
+else 
+--IF NO NEW DATA, UPDATES ONLY METADATA TABLE
+--UPDATE INTO METADATA TABLE 
+EXECUTE IMMEDIATE format ("""update `demo_dataset.metadata` 
+set  last_successful_run ='%t' where src_dataset_name = '%s' and src_table = '%s' and dest_table ='%s'"""
+,query_exec_time,external_dataset,external_table_name,native_table_name) ;
+END IF ;
+END;
+
+
+
+
+call stored_procedure.sp_native_table('external_dataset_name','external_table_name','native_dataset','native_table_name') ;
+
+
+This was level 1 data extraction from External table and loading it to Bigquery Native table, and then follows our next level 2, which extracts the data from above Native table and performs transformations based on the business logic and loading it into Bigquery Blended table.
+
+For Level 2, involves the same steps as in the level 1 with business logic passed dynamically from another Bigquery table
+
+Following Stored Procedure which has Consolidated call statements for every individual tables in both levels which needs to be scheduled in Schedule Query. Below stored procedure needs to be created for all tables by passing the dataset names and table names as the parameters
+create OR REPLACE PROCEDURE `project-id-test-gcp.stored_procedure.sp_table_name_active`()
+BEGIN
+call stored_procedure.sp_native_table('external_dataset_name','external_table_name','native_dataset_name','native_table_name');
+call stored_procedure.sp_blended_table('native_dataset_name','native_table_name','blended_dataset_name','blended_table_name') ;
+END;
+call `stored_procedure.sp_table_name_active`();
+
+Then, Using schedule query feature which is the in-house feature of Bigquery the above steps were automated .Constructed Data pipeline was scheduled once a day to perform the ETL operation
+
+Thus, data pipelines were created without any hassle.
+
+By using a dynamic scripting approach, Even if the table counts increase 50 folds the current number, the Construction of the ETL data pipeline can be managed without any hassle without any change required in our code base. The only changes required were only on call statements where we pass the actual dataset and table names and automated the pipelines as per the business requirements
