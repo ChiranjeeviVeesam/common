@@ -1,0 +1,24 @@
+#delete
+create table <tableName> as 
+select a.*, 'D' as update_flag 
+from 
+<base_table_name> a right outer join
+<prev_day_bkp_table> b on (a.id=b.id)
+where a.id = NULL
+
+#update
+insert into <tableName> as
+select a.*, 'U' as update_flag 
+from 
+<base_table_name> a,
+<prev_day_bkp_table> b 
+where a.id=b.id and <each and every column of a> ! = <each and every column of b>
+
+#insert
+insert into <tableName> as
+select a.*, 'I' as update_flag
+from <base_table_name> a left outer join <prev_day_bkp_tabl> b 
+on (a.id=b.id) where b.id is null
+
+delete prev_day_bkp and
+make base_table as prev_day_bkp table.
