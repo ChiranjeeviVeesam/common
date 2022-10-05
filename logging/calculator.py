@@ -1,7 +1,7 @@
-import logging 
-from logs import get_logger
+from logs import get_log_func, get_logger
 
 logger = get_logger(__name__)
+log = get_log_func(__name__)
 # formatter = logging.Formatter('%(asctime)s:%(name)s:%(message)s')
 # filehandler = logging.FileHandler('calculator.log')
 
@@ -10,15 +10,15 @@ logger = get_logger(__name__)
 
 #logging.basicConfig(filename='logs.log', level=logging.DEBUG, format ='%(asctime)s:%(levelname)s:%(message)s')
 # the default level is warning
-class calculator:
-    result = 0
-    @staticmethod
-    def addition(a, b):
-        result = a+b
-        logger.debug('Add {} and {} = {}'.format(a, b, result))
-        return result 
-    @staticmethod
-    def substraction(a, b):
-        result = a-b
-        logger.debug('Sub {} and {} = {}'.format(a, b, result))
-        return result
+class Calculator:
+    __result = 0
+    @log
+    def addition(self, a, b):
+        self.__result = a+b
+        # logger.debug('Add {} and {} = {}'.format(a, b, result))
+        return self.__result 
+    @log
+    def substraction(self, a, b):
+        self.__result = a-b
+        # logger.debug('Sub {} and {} = {}'.format(a, b, result))
+        return self.__result
