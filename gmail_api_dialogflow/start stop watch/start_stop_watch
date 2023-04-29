@@ -1,0 +1,83 @@
+import base64
+import json 
+import os
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from google.cloud import secretmanager
+
+def start_stop_watching(event, context):
+  secret_name = 'access_token'
+  project_id = 'peak-emitter-377300'
+  topic = 'projects/peak-emitter-377300/topics/watch-notify'
+  
+  os.environ["GOOGLE_APPLICATION_CREDENTIALS"]='secretmanagerkey.json'
+  os.environ["GOOGLE_CLOUD_PROJECT"]=project_id
+
+  try:
+    pubsub_message = base64.b64decode(event['data']).decode('utf-8')
+    data = json.loads(pubsub_message)
+
+   
+    if data['watch'] == '1':
+      credentials = get_credentials(secret_name, project_id)
+      if credentials:
+        service = build('gmail','v1',credentials=credentials)
+        start_watching(service, credentials, topic)
+    
+    elif data['watch'] == '0':
+      credentials = get_credentials(secret_name, project_id)
+      if credentials:
+        service = build('gmail','v1',credentials=credentials)
+        stop_watching(service, credentials)
+    else:
+      print('invalid value')
+          
+  except Exception as e:
+      print('failed at start stop watching ',e)
+
+
+
+def get_credentials(secret_name, project_id):
+
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+        response = client.access_secret_version(name=name)
+        payload = response.payload.data.decode('UTF-8')
+        creds = Credentials.from_authorized_user_info(info=json.loads(payload))
+        print('fetched credentials successfully')
+        return creds
+
+    except Exception as e:
+        print('failed at getting credentials', e)
+        return False
+
+def start_watching(service, credentials, topic):
+
+  try:
+    label_ids = ["INBOX"]
+    
+    response = service.users().watch(userId="me",body={
+      "topicName": topic,
+      "labelIds": label_ids,
+      "historyTypes": ["MESSAGE_ADDED"]
+    }).execute()
+
+    print(f"Watch successful {response['historyId']} ")
+
+  except Exception as e:
+    print('failed at watching',e)
+
+
+
+def stop_watching(service, credentials):
+
+  try:
+    service.users().stop(
+    userId="me").execute()
+    print('Succesfully stopped watching')
+
+  except Exception as e:
+    print('failed at stop watching',e)
+
+
