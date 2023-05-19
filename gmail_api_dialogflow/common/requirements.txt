@@ -1,0 +1,6 @@
+google-auth
+google-api-python-client
+google-cloud-pubsub
+google-cloud-storage
+google-cloud-secret-manager
+google-cloud-dialogflow
