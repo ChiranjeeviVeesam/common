@@ -8,6 +8,7 @@ from email.message import EmailMessage
 import base64
 import json
 import uuid
+import re 
 
 class AbstractDataClient(ABC):
     def __init__(self):
@@ -34,7 +35,7 @@ class GoogleCloudStorageClient(AbstractDataClient):
     def get_connection(self):
         try:
             con = storage.Client()
-            print('google cloud storage connection is successful')
+            # print('google cloud storage connection is successful')
             return con
         except Exception as e:
             print('failed to connect Google Cloud Storage ',e)
@@ -86,7 +87,7 @@ class GmailClient(AbstractDataClient):
             response = client.access_secret_version(name=name)
             payload = response.payload.data.decode('UTF-8')
             creds = Credentials.from_authorized_user_info(info=json.loads(payload))
-            print('fetched credentials successfully')
+            # print('fetched credentials successfully')
             return creds
 
         except Exception as e:
@@ -102,7 +103,7 @@ class GmailClient(AbstractDataClient):
             else:
               credentials = self.get_credentials(secret_name, self.__project_id)
             gmail_con = build('gmail', 'v1', credentials=credentials)
-            print('successfully connected to gmail api')
+            # print('successfully connected to gmail api')
             return  gmail_con
         except Exception as e:
             print('failed to connect gmail api',e)
@@ -127,7 +128,17 @@ class GmailClient(AbstractDataClient):
                     return header['value']
             return ''
         except Exception as e:
-            print('failed to get the email address',e)
+            print('failed to get the from email address',e)
+            return False
+    def get_message_id(self, data):
+        try:
+            headers = data['payload']['headers']
+            for header in headers:
+                if header['name']=='Message-ID':
+                    return header['value']
+            return ''
+        except Exception as e:
+            print('failed to get the message id',e)
             return False 
     def get_to_email_address(self, data):
         try:
@@ -137,17 +148,24 @@ class GmailClient(AbstractDataClient):
                     return header['value']
             return ''
         except Exception as e:
-            print('failed to get the email address',e)
+            print('failed to get the to email address',e)
             return False 
             
     def get_message(self, data):
         try:
-            return data['snippet']
+            # pattern = r'On\s\w{3,},\s\w{3,}\s\d{1,2},\s\d{4},\s[0-2][0-9]:\d{1,2}\s[^wrote]+[wrote:]'
+            message_data = data['snippet']
+            match = re.search("wrote:",message_data)
+            if match:
+              index = message_data[:match.start()].rfind('On')  
+              message_data = message_data[:index] if index>0 else message_data
+            return message_data
         except Exception as e:
             print('failed to get the message data',e)
             return False
     
     def retrieve_custom_data(self, unique_message_ids):
+        output_list = []
         for id in unique_message_ids:
             try:
              data = self.__service.users().messages().get(userId=self.__user_id, id=id).execute()      
@@ -155,12 +173,14 @@ class GmailClient(AbstractDataClient):
              from_email_addr = self.get_from_email_address(data)
              to_email_addr = self.get_to_email_address(data)
              subject = self.get_subject(data)
-             if subject and message and from_email_addr and to_email_addr:
-                output = dict(zip(('subject','fromEmail','toEmail','message'),(subject,from_email_addr, to_email_addr, message)))     
-                yield output             
+             threadId = data["threadId"]
+             messageId = self.get_message_id(data)
+             if subject and message and from_email_addr and to_email_addr and 'INBOX' in data['labelIds']:
+                output = dict(zip(('subject','fromEmail','toEmail','message','threadId','messageId'),(subject,from_email_addr, to_email_addr, message,threadId,messageId)))     
+                output_list.append(output)             
             except Exception as e:
                 print('failed at extracting data',e)
-             
+        return output_list     
     def retrieve_data(self, history_id):        
         unique_messages = {}
         if self.__service:
@@ -168,7 +188,7 @@ class GmailClient(AbstractDataClient):
                 history_list = self.__service.users().history().list(userId=self.__user_id,startHistoryId=history_id,historyTypes='messageAdded', labelId='INBOX').execute()            
                 if 'history' in history_list:
                     unique_message_ids = {message['id'] for history in history_list['history'] for message in history['messages']}
-                    print('successfully retrieved the data')
+                    # print('successfully retrieved the data')
                     return self.retrieve_custom_data(unique_message_ids)
             except Exception as e:
                 print('failed at retreiving message ids', e)
@@ -178,22 +198,28 @@ class GmailClient(AbstractDataClient):
             try:
                 message = EmailMessage()
                 message.set_content(data['response'])
-
-                message['To'] = data['toEmail']
-                message['From'] =  data['fromEmail']
+                data = data['data']
+                message['To'] = data['fromEmail']
+                message['From'] =  data['toEmail']
                 message['Subject'] = data['subject']
+                message['In-Reply-To']=data['messageId']
+                message['References']=data['messageId']
+
+                
                 
 
         # encoded message
                 encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
                 create_message = {
+                    'threadId': data['threadId'],
                     'raw': encoded_message
                 }
                 
                 send_message = (self.__service.users().messages().send
                         (userId=self.__user_id, body=create_message).execute())
-                print(F'Message Id: {send_message["id"]}')
+                return send_message
+                # print(F'Message Id: {send_message["id"]}')
 
             except Exception as error:
                 print(F'An error occurred: {error}')
