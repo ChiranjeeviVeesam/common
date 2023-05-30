@@ -21,13 +21,15 @@ class DialogflowClient:
         
         if self.___connection:
             try:
-                session_id = str(uuid.uuid4())
+                # session_id = str(uuid.uuid4())
+                session_id = data['fromEmail']
                 session = self.___connection.session_path(self.__project, session_id)
                 text_input = dialogflow.TextInput(text=data['message'],language_code='en')
                 query_input = dialogflow.QueryInput(text=text_input)
                 response = self.___connection.detect_intent(
                     request={"session": session, "query_input": query_input}
-                )               
+                )
+                print('sent data to dialogflow')               
                 return response.query_result.fulfillment_text
             
             except Exception as e:
