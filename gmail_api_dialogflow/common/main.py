@@ -21,10 +21,11 @@ def main(event, context):
 
     previous_history_id = extract_manager_client.get_history_id()    
     load_manager_client.save_history_id(latest_history_id)
-    
+  
     if previous_history_id:
+        print(f'started fetching data from gmail with history id {previous_history_id}')
         total_data =  extract_manager_client.get_gmail_data(previous_history_id)
-
+        print(f'completed fetching data from gmail with history id {previous_history_id}')
         if total_data:
           load_manager_client.send_response_to_user_from_dialogflow(total_data) 
         else:
