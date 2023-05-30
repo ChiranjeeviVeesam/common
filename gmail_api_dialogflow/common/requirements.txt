@@ -4,3 +4,4 @@ google-cloud-pubsub
 google-cloud-storage
 google-cloud-secret-manager
 google-cloud-dialogflow
+google-cloud-dialogflow-cx
