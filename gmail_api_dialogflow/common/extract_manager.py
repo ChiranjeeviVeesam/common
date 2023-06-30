@@ -17,9 +17,4 @@ class ExtractManager:
     
     def get_gmail_data(self, history_id):
         self.__database_client = self.DATABASES["gmail"](self.__configuration)
-        return self.__database_client.retrieve_data(history_id) 
-    
-
-
-        
-    
+        return self.__database_client.retrieve_data(history_id)
