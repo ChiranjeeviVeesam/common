@@ -153,12 +153,12 @@ class GmailClient(AbstractDataClient):
             
     def get_message(self, data):
         try:
-            # pattern = r'On\s\w{3,},\s\w{3,}\s\d{1,2},\s\d{4},\s[0-2][0-9]:\d{1,2}\s[^wrote]+[wrote:]'
             message_data = data['snippet']
-            match = re.search("wrote:",message_data)
-            if match:
-              index = message_data[:match.start()].rfind('On')  
-              message_data = message_data[:index] if index>0 else message_data
+            # to maintain followup data by excluding the old data in reply mode 
+            # match = re.search("wrote:",message_data)
+            # if match:
+            #   index = message_data[:match.start()].rfind('On')  
+            #   message_data = message_data[:index] if index>0 else message_data
             return message_data
         except Exception as e:
             print('failed to get the message data',e)
@@ -173,10 +173,11 @@ class GmailClient(AbstractDataClient):
              from_email_addr = self.get_from_email_address(data)
              to_email_addr = self.get_to_email_address(data)
              subject = self.get_subject(data)
+             #threadId maintains the context of mail thread
              threadId = data["threadId"]
              messageId = self.get_message_id(data)
              if subject and message and from_email_addr and to_email_addr and 'INBOX' in data['labelIds']:
-                output = dict(zip(('subject','fromEmail','toEmail','message','threadId','messageId'),(subject,from_email_addr, to_email_addr, message,threadId,messageId)))     
+                output = dict(zip(('subject','fromEmail','toEmail','message','threadId','messageId'),(subject,from_email_addr, to_email_addr, message, threadId, messageId)))     
                 output_list.append(output)             
             except Exception as e:
                 print('failed at extracting data',e)
@@ -223,4 +224,3 @@ class GmailClient(AbstractDataClient):
 
             except Exception as error:
                 print(F'An error occurred: {error}')
-
